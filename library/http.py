@@ -65,11 +65,6 @@ def requestWrapper(client: httpx.Client, method: str, url: str, use_cache: bool 
     max_retries = 5
     backoff_factor = 1.5
     
-    # 1. FIX THE 307 REDIRECTS NATIVELY:
-    # Force httpx to automatically follow the CDN redirect without throwing an error
-    if 'follow_redirects' not in kwargs:
-        kwargs['follow_redirects'] = True
-    
     cacheable = use_cache and method.upper() == "GET" # only caching GET requests
     cache_key = None
     
@@ -85,8 +80,6 @@ def requestWrapper(client: httpx.Client, method: str, url: str, use_cache: bool 
     
     for attempt in range(max_retries):
         try:
-            # 2. THE SEEKING FIX:
-            # **kwargs is passed seamlessly so Plex's HTTP "Range" headers survive
             response = client.request(method, url, **kwargs)
             response.raise_for_status()
             
@@ -96,7 +89,7 @@ def requestWrapper(client: httpx.Client, method: str, url: str, use_cache: bool 
             
             return response
         except httpx.HTTPStatusError as e:
-            if hasattr(e.response, 'has_redirect_location') and e.response.has_redirect_location:
+            if e.response.has_redirect_location:
                 return e.response
             bad_response_codes = [429]
             if e.response.status_code in bad_response_codes:
@@ -110,5 +103,4 @@ def requestWrapper(client: httpx.Client, method: str, url: str, use_cache: bool 
             wait_time = backoff_factor * (2 ** attempt)
             logging.warning(f"Request error on {url}: {e}. Retrying in {wait_time:.2f} seconds...")
             time.sleep(wait_time)
-            
     raise httpx.RequestError(f"Failed to complete request to {url} after {max_retries} attempts.")
